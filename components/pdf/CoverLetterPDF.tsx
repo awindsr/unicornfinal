@@ -2,6 +2,7 @@ import {
   Document, Page, Text, View, StyleSheet, Font, Image,
 } from '@react-pdf/renderer';
 import path from 'path';
+import fs from 'fs';
 
 // ============================================================
 // Unicorn Valves — Cover Letter + Terms & Conditions PDF
@@ -17,7 +18,14 @@ Font.register({
   ],
 });
 
-const LOGO_PATH = path.join(process.cwd(), 'public', 'unicorn-logo.png');
+const LOGO_DATA: string = (() => {
+  try {
+    const p = path.join(process.cwd(), 'public', 'unicorn-logo.png');
+    return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`;
+  } catch {
+    return '';
+  }
+})();
 
 const colors = {
   black: '#000000',
@@ -30,36 +38,47 @@ const s = StyleSheet.create({
   page: {
     fontFamily: 'Inter',
     fontSize: 10,
-    paddingTop: 30,
-    paddingBottom: 55,
+    paddingTop: 90,
+    paddingBottom: 75,
     paddingLeft: 50,
     paddingRight: 50,
     color: colors.black,
     lineHeight: 1.4,
   },
 
-  /* Logo — top-right absolute */
-  logo: { position: 'absolute', top: 18, right: 35, width: 130, height: 56 },
-
-  /* Footer — fixed on all pages */
-  footer: {
+  /* Header — fixed on all pages */
+  header: {
     position: 'absolute',
-    bottom: 12,
+    top: 20,
     left: 40,
     right: 40,
-    textAlign: 'center',
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
-    paddingTop: 4,
+    height: 55,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.black,
+    paddingBottom: 6,
   },
-  footerLine1: { fontSize: 7, lineHeight: 1.3 },
-  footerLine2: { fontSize: 7, lineHeight: 1.3, marginTop: 1 },
-  footerUrl: { fontSize: 7, color: colors.red, marginTop: 1 },
-  footerBold: { fontWeight: 700, color: colors.red },
-  footerNormal: { fontWeight: 400, color: '#333' },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 13, fontWeight: 700, color: colors.black },
+  headerLogo: { width: 80, height: 36 },
+
+  /* Footer — fixed on all pages, bordered box */
+  footer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 40,
+    right: 40,
+    borderWidth: 0.5,
+    borderColor: colors.black,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    textAlign: 'center',
+  },
+  footerName: { fontSize: 8, fontWeight: 700, color: colors.black, marginBottom: 2 },
+  footerLine: { fontSize: 7, color: colors.black, lineHeight: 1.3 },
 
   /* ─── Cover Letter Styles ─── */
-  clLocation: { fontSize: 10, fontWeight: 700, marginTop: 50 },
+  clLocation: { fontSize: 10, fontWeight: 700, marginTop: 4 },
   clDate: { fontSize: 10, marginBottom: 16 },
   clCustomerName: { fontSize: 10, fontWeight: 600, textDecoration: 'underline', marginBottom: 1 },
   clCustomerLine: { fontSize: 10, marginBottom: 0.5 },
@@ -96,7 +115,7 @@ const s = StyleSheet.create({
   /* T&C Page numbering */
   tcPageRow: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 78,
     left: 50,
     right: 50,
     flexDirection: 'row',
@@ -110,21 +129,21 @@ const s = StyleSheet.create({
 function Footer() {
   return (
     <View style={s.footer} fixed>
-      <Text style={s.footerLine1}>
-        <Text style={s.footerBold}>Unicorn Valves Private Limited,</Text>
-        <Text style={s.footerNormal}> SF No : 100/2B, Valukkuparai, P.O., Marichettipathy Road, Nachipalayam,</Text>
-      </Text>
-      <Text style={s.footerLine2}>
-        <Text style={s.footerNormal}>Madukkarai Taluk, Coimbatore – 641032, Tamil Nadu, India, Ph No. +91-422-2901322</Text>
-      </Text>
-      <Text style={s.footerUrl}>www.unicorn-valves.com</Text>
+      <Text style={s.footerName}>Unicorn Valves Private Limited</Text>
+      <Text style={s.footerLine}>SF No : 100/2B, Valukkuparai P.O., Marichettipathy Road, Nachipalayam,</Text>
+      <Text style={s.footerLine}>Madukkarai Taluk, Coimbatore – 641032, Tamil Nadu, India, Ph No. +91-422-2901322</Text>
     </View>
   );
 }
 
-/* ── Logo component ── */
-function Logo() {
-  return <Image style={s.logo} src={LOGO_PATH} />;
+/* ── Shared header ── */
+function Header() {
+  return (
+    <View style={s.header} fixed>
+      <Text style={s.headerTitle}>Price Summary for Control Valves &amp; Accessories</Text>
+      {LOGO_DATA && <Image style={s.headerLogo} src={LOGO_DATA} />}
+    </View>
+  );
 }
 
 /* ── Props ── */
@@ -175,7 +194,7 @@ export function CoverLetterPDF({ quote, customer, creator, company }: CoverLette
     <Document>
       {/* ═══════════════ PAGE 1 — COVER LETTER ═══════════════ */}
       <Page size="A4" style={s.page}>
-        <Logo />
+        <Header />
 
         {/* Location & Date */}
         <Text style={s.clLocation}>Coimbatore, INDIA</Text>
@@ -243,7 +262,7 @@ export function CoverLetterPDF({ quote, customer, creator, company }: CoverLette
 
       {/* ═══════════════ T&C PAGE 1 ═══════════════ */}
       <Page size="A4" style={s.page}>
-        <Logo />
+        <Header />
         <Text style={s.tcTitle}>COMMERCIAL TERMS &amp; CONDITIONS</Text>
 
         {/* ACCEPTANCE AND CONTRACT FORMATION */}
@@ -314,10 +333,10 @@ export function CoverLetterPDF({ quote, customer, creator, company }: CoverLette
 
       {/* ═══════════════ T&C PAGE 2 ═══════════════ */}
       <Page size="A4" style={s.page}>
-        <Logo />
+        <Header />
 
         {/* Inspection */}
-        <View style={[s.tcSection, { marginTop: 40 }]}>
+        <View style={s.tcSection}>
           <Text style={s.tcSubHead}>Inspection</Text>
           <Text style={s.tcBody}>
             All goods will undergo sellers standard quality control inspection and testing procedures, before release from factory. Any additional tests and / or inspection requirements will be at buyer's cost and will need to be communicated and agreed at the time of order.
@@ -379,10 +398,10 @@ export function CoverLetterPDF({ quote, customer, creator, company }: CoverLette
 
       {/* ═══════════════ T&C PAGE 3 ═══════════════ */}
       <Page size="A4" style={s.page}>
-        <Logo />
+        <Header />
 
         {/* FORCE MAJEURE */}
-        <View style={[s.tcSection, { marginTop: 40 }]}>
+        <View style={s.tcSection}>
           <Text style={s.tcSectionHead}>FORCE MAJEURE</Text>
           <Text style={s.tcBody}>
             Neither party shall be held responsible for any delay or failure in performance resulting from acts beyond their reasonable control, including but not limited to acts of God, fire, flood, earthquake, pandemic, epidemic, war, terrorism, civil disturbance, governmental actions, strikes, lockouts, shortage of materials, and any other causes beyond reasonable control of the affected party. The affected party shall notify the other party promptly and shall use reasonable efforts to mitigate the impact of such events.
@@ -438,10 +457,10 @@ export function CoverLetterPDF({ quote, customer, creator, company }: CoverLette
 
       {/* ═══════════════ T&C PAGE 4 ═══════════════ */}
       <Page size="A4" style={s.page}>
-        <Logo />
+        <Header />
 
         {/* DISPUTE RESOLUTION */}
-        <View style={[s.tcSection, { marginTop: 40 }]}>
+        <View style={s.tcSection}>
           <Text style={s.tcSectionHead}>DISPUTE RESOLUTION</Text>
           <Text style={s.tcBody}>
             Any dispute, controversy or claim arising out of, or relating to this contract, or the breach, termination or invalidity thereof, shall first be attempted to be settled amicably through mutual consultation. If the matter is not resolved within 30 days, it shall be referred to arbitration in accordance with the Arbitration and Conciliation Act, 1996. The seat of arbitration shall be Coimbatore, Tamil Nadu, India. The language of arbitration shall be English.

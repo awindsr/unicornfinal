@@ -1,6 +1,17 @@
 import {
-  Document, Page, Text, View, StyleSheet, Font,
+  Document, Page, Text, View, StyleSheet, Font, Image,
 } from '@react-pdf/renderer';
+import path from 'path';
+import fs from 'fs';
+
+const LOGO_DATA: string = (() => {
+  try {
+    const p = path.join(process.cwd(), 'public', 'unicorn-logo.png');
+    return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`;
+  } catch {
+    return '';
+  }
+})();
 
 // ============================================================
 // Unicorn Valves — PDF Quote Template
@@ -25,8 +36,23 @@ const colors = {
 };
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Inter', fontSize: 9, padding: 40, color: '#1f2937' },
-  // Header
+  page: { fontFamily: 'Inter', fontSize: 9, paddingTop: 90, paddingBottom: 75, paddingLeft: 40, paddingRight: 40, color: '#1f2937' },
+  // Brand header (fixed, top of every page)
+  brandHeader: {
+    position: 'absolute',
+    top: 20,
+    left: 40,
+    right: 40,
+    height: 55,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#000000',
+    paddingBottom: 6,
+  },
+  brandHeaderTitle: { flex: 1, textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#000000' },
+  brandHeaderLogo: { width: 80, height: 36 },
+  // Quote meta header
   header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   logo: { fontSize: 16, fontWeight: 700, color: colors.navy },
   logoSub: { fontSize: 8, color: colors.gray, marginTop: 2 },
@@ -67,8 +93,20 @@ const s = StyleSheet.create({
   termItem: { flexDirection: 'row', marginBottom: 3 },
   termLabel: { width: 120, fontSize: 7, color: colors.gray },
   termValue: { flex: 1, fontSize: 7 },
-  // Footer
-  footer: { position: 'absolute', bottom: 30, left: 40, right: 40, textAlign: 'center', fontSize: 7, color: colors.gray, borderTopWidth: 0.5, borderTopColor: colors.border, paddingTop: 8 },
+  // Footer (fixed, bordered box)
+  footer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 40,
+    right: 40,
+    borderWidth: 0.5,
+    borderColor: '#000000',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    textAlign: 'center',
+  },
+  footerName: { fontSize: 8, fontWeight: 700, color: '#000000', marginBottom: 2 },
+  footerLine: { fontSize: 7, color: '#000000', lineHeight: 1.3 },
 });
 
 interface QuotePDFProps {
@@ -132,11 +170,15 @@ export function QuotePDF({ quote, customer, products, company, exchangeRate }: Q
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        {/* Header */}
+        {/* Brand Header (fixed) */}
+        <View style={s.brandHeader} fixed>
+          <Text style={s.brandHeaderTitle}>Price Summary for Control Valves &amp; Accessories</Text>
+          {LOGO_DATA && <Image style={s.brandHeaderLogo} src={LOGO_DATA} />}
+        </View>
+
+        {/* Quote meta row */}
         <View style={s.header}>
           <View>
-            <Text style={s.logo}>{company.name}</Text>
-            <Text style={s.logoSub}>{company.address}</Text>
             {company.gstin && <Text style={s.logoSub}>GSTIN: {company.gstin}</Text>}
           </View>
           <View style={s.quoteInfo}>
@@ -204,8 +246,12 @@ export function QuotePDF({ quote, customer, products, company, exchangeRate }: Q
           {quote.notes && <View style={s.termItem}><Text style={s.termLabel}>Notes</Text><Text style={s.termValue}>{quote.notes}</Text></View>}
         </View>
 
-        {/* Footer */}
-        <Text style={s.footer}>{company.name} · {company.address} · This is a system-generated quotation</Text>
+        {/* Footer (fixed) */}
+        <View style={s.footer} fixed>
+          <Text style={s.footerName}>Unicorn Valves Private Limited</Text>
+          <Text style={s.footerLine}>SF No : 100/2B, Valukkuparai P.O., Marichettipathy Road, Nachipalayam,</Text>
+          <Text style={s.footerLine}>Madukkarai Taluk, Coimbatore – 641032, Tamil Nadu, India, Ph No. +91-422-2901322</Text>
+        </View>
       </Page>
     </Document>
   );
