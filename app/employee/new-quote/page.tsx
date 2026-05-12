@@ -826,7 +826,7 @@ function StepTermsPricing({ customers }: { customers: Customer[] }) {
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              {store.pricing_type !== 'ex-works' && (
+              {store.pricing_type === 'for-site' && (
                 <div className="space-y-2">
                   <Label>Freight (₹) *</Label>
                   <Input type="number" min="0" value={store.freight_price || ''} onChange={(e) => store.setQuoteSettings({ freight_price: e.target.value === '' ? 0 : Number(e.target.value) })} />
@@ -1624,6 +1624,47 @@ function StepProducts({
 }
 
 // ===================================================================
+// HELPER: Bulk Discount Bar (apply one % to all products at once)
+// ===================================================================
+
+function BulkDiscountBar() {
+  const store = useQuoteStore();
+  const [bulkPct, setBulkPct] = useState('');
+
+  function applyToAll() {
+    const pct = parseFloat(bulkPct);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      toast.error('Enter a discount between 0 and 100');
+      return;
+    }
+    store.products.forEach(p => store.updateProduct(p.id, { discount_pct: pct }));
+    toast.success(`${pct}% discount applied to all ${store.products.length} product(s)`);
+    setBulkPct('');
+  }
+
+  return (
+    <div className="flex items-center gap-2 bg-muted/40 border rounded-lg px-3 py-2">
+      <span className="text-xs text-muted-foreground whitespace-nowrap">Apply to all:</span>
+      <Input
+        type="number"
+        min="0"
+        max="100"
+        step="0.5"
+        placeholder="0"
+        className="h-7 w-20 text-right text-xs"
+        value={bulkPct}
+        onChange={e => setBulkPct(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && applyToAll()}
+      />
+      <span className="text-xs text-muted-foreground">%</span>
+      <Button size="sm" variant="secondary" className="h-7 text-xs px-2 whitespace-nowrap" onClick={applyToAll}>
+        Apply to All
+      </Button>
+    </div>
+  );
+}
+
+// ===================================================================
 // STEP 3: Line Items & Pricing
 // ===================================================================
 
@@ -1692,11 +1733,17 @@ function StepLineItemsPricing({
       {/* Line Items Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Product Line Items</CardTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Set per-product discounts below. Discounts are applied individually to each product line, not on the final total.
-            After changing a discount, click <strong>Recalculate</strong> to update the price.
-          </p>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="text-base">Product Line Items</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Set per-product discounts below. Discounts are applied individually to each product line, not on the final total.
+                After changing a discount, click <strong>Recalculate</strong> to update the price.
+              </p>
+            </div>
+            {/* Bulk discount apply-to-all */}
+            <BulkDiscountBar />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1829,7 +1876,7 @@ function StepReview({ customers, saving, onSave, exchangeRate }: { customers: Cu
   const isIntl = customer?.is_international ?? false;
   const taxPct = isIntl ? 0 : 18;
   const subtotal = store.products.reduce((s, p) => s + p.line_total, 0);
-  const freight = store.pricing_type !== 'ex-works' ? store.freight_price : 0;
+  const freight = store.pricing_type === 'for-site' ? store.freight_price : 0;
   const packing = store.packing_price;
   const customCharge = store.pricing_type === 'custom' ? store.custom_pricing_price : 0;
   const taxableAmount = subtotal + freight + packing + customCharge;
