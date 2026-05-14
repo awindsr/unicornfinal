@@ -980,7 +980,7 @@ function StepProducts({
   // Helper: get material name by id and group
   const getMatName = (group: string, id: string) => {
     const m = (materials[group] ?? []).find(m => m.id === id);
-    return m ? `${m.material_name} (₹${m.price_per_kg}/kg)` : 'Select';
+    return m ? m.material_name : 'Select';
   };
 
   return (
@@ -1163,7 +1163,7 @@ function StepProducts({
                     </SelectTrigger>
                     <SelectContent>
                       {(materials['BodyBonnet'] ?? []).map(m => (
-                        <SelectItem key={m.id} value={m.id}>{m.material_name} (₹{m.price_per_kg}/kg)</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1207,7 +1207,7 @@ function StepProducts({
                     </SelectTrigger>
                     <SelectContent>
                       {(materials['Plug'] ?? []).map(m => (
-                        <SelectItem key={m.id} value={m.id}>{m.material_name} (₹{m.price_per_kg}/kg)</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1230,7 +1230,7 @@ function StepProducts({
                     </SelectTrigger>
                     <SelectContent>
                       {(materials['Seat'] ?? []).map(m => (
-                        <SelectItem key={m.id} value={m.id}>{m.material_name} (₹{m.price_per_kg}/kg)</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1253,7 +1253,7 @@ function StepProducts({
                     </SelectTrigger>
                     <SelectContent>
                       {(materials['Stem'] ?? []).map(m => (
-                        <SelectItem key={m.id} value={m.id}>{m.material_name} (₹{m.price_per_kg}/kg)</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1279,7 +1279,7 @@ function StepProducts({
                         </SelectTrigger>
                         <SelectContent>
                           {(materials['Cage'] ?? []).map(m => (
-                            <SelectItem key={m.id} value={m.id}>{m.material_name} (₹{m.price_per_kg}/kg)</SelectItem>
+                            <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1343,16 +1343,12 @@ function StepProducts({
                 {product.has_pilot_plug ? (
                   <div className="space-y-2">
                     <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300">✓ Pilot Plug included</Badge>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Pilot Plug Material</Label>
-                      <p className="text-xs font-semibold text-foreground">
-                        {product.plug_material_id ? getMatName('Plug', product.plug_material_id) : <span className="text-amber-600">⚠ Select Plug Material above first</span>}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground italic">Uses same material as Plug. Cost = Pilot Plug Weight × Plug Material Rate</p>
-                    </div>
+                    <p className="text-xs font-semibold text-foreground">
+                      {product.plug_material_id ? getMatName('Plug', product.plug_material_id) : <span className="text-amber-600">⚠ Select Plug Material above first</span>}
+                    </p>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground italic">Check above to include (cost = weight × plug material rate)</p>
+                  <p className="text-xs text-muted-foreground italic">Check above to include a pilot plug</p>
                 )}
               </div>
             </div>
