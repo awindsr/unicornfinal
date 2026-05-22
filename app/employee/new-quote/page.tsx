@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Copy, Save, Loader2,
-  Settings2, Package, Calculator, CheckCircle, FileText, AlertTriangle
+  Settings2, Package, Calculator, CheckCircle, FileText, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { calculateProductPrice, calculateQuoteTotal, roundToNearest10, convertToUSD, lineToUSD } from '@/lib/pricingEngine';
 import type { Customer } from '@/types';
@@ -69,7 +69,7 @@ export default function NewQuotePage() {
 
   async function loadInitialData() {
     setLoadingData(true);
-    const [custRes, seriesRes, matRes, settingsRes, bwRes, bnwRes, actRes, hwRes, testPresRes, tubePresRes, sealRes, machTypeRes] = await Promise.all([
+    const [custRes, seriesRes, matRes, settingsRes, bwRes, bnwRes, actRes, hwRes, testPresRes, tubePresRes, sealRes, machTypeRes, liveRateRes] = await Promise.all([
       supabase.from('customers').select('*').order('name'),
       supabase.from('series').select('*').eq('is_active', true).order('series_number'),
       supabase.from('materials').select('*').eq('is_active', true),
@@ -82,6 +82,7 @@ export default function NewQuotePage() {
       supabase.from('tubing_presets').select('*').eq('is_active', true),
       supabase.from('seal_ring_prices').select('series_id, seal_type, size, rating').eq('is_active', true),
       supabase.from('machining_prices').select('component, series_id, type_key, size, rating').eq('is_active', true),
+      fetch('https://api.frankfurter.dev/v2/rate/USD/INR').then(r => r.json()).catch(() => null),
     ]);
 
     setCustomers(custRes.data ?? []);
@@ -114,11 +115,14 @@ export default function NewQuotePage() {
       store.setMargins(v);
     }
 
-    // Load exchange rate
+    // Load exchange rate: edit mode uses saved snapshot, new quote uses live API rate, DB value as fallback
     const exSetting = settings.find(s => s.key === 'exchange_rate');
-    if (exSetting) {
-      const v = exSetting.value as { usd_to_inr: number };
-      setExchangeRate(v.usd_to_inr);
+    const dbRate = (exSetting?.value as { usd_to_inr: number } | undefined)?.usd_to_inr ?? 83.5;
+    const liveRate = typeof liveRateRes?.rate === 'number' ? liveRateRes.rate : null;
+    if (store.edit_mode && store.exchange_rate_snapshot) {
+      setExchangeRate(store.exchange_rate_snapshot);
+    } else {
+      setExchangeRate(liveRate ?? dbRate);
     }
 
     setLoadingData(false);
@@ -684,7 +688,7 @@ export default function NewQuotePage() {
 
       {/* Step Content */}
       {store.currentStep === 0 && (
-        <StepCustomerProject customers={customers} />
+        <StepCustomerProject customers={customers} exchangeRate={exchangeRate} onRateChange={setExchangeRate} />
       )}
       {store.currentStep === 1 && (
         <StepProducts series={series} materials={materials} lookupCosts={lookupCosts} customers={customers} exchangeRate={exchangeRate} bodyWeights={bodyWeights} bonnetWeights={bonnetWeights} actuatorModels={actuatorModels} handwheelPrices={handwheelPrices} calculatingId={calculatingId} testingPresets={testingPresets} tubingPresets={tubingPresets} sealRingRows={sealRingRows} machiningTypeRows={machiningTypeRows} />
@@ -731,9 +735,22 @@ export default function NewQuotePage() {
 // STEP 1: Customer & Project
 // ===================================================================
 
-function StepCustomerProject({ customers }: { customers: Customer[] }) {
+function StepCustomerProject({ customers, exchangeRate, onRateChange }: { customers: Customer[]; exchangeRate: number; onRateChange: (rate: number) => void }) {
   const store = useQuoteStore();
   const selectedCustomer = customers.find(c => c.id === store.customer_id);
+  const [loadingRate, setLoadingRate] = useState(false);
+
+  async function refreshRate() {
+    setLoadingRate(true);
+    try {
+      const data = await fetch('https://api.frankfurter.dev/v2/rate/USD/INR').then(r => r.json());
+      if (typeof data?.rate === 'number') onRateChange(data.rate);
+    } catch {
+      toast.error('Failed to fetch live rate');
+    } finally {
+      setLoadingRate(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -798,6 +815,23 @@ function StepCustomerProject({ customers }: { customers: Customer[] }) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">Standard uses default margins, Project uses project-specific margins.</p>
+          </div>
+          <div className="space-y-2">
+            <Label>Set Dollar Price <span className="text-muted-foreground text-xs">(1 USD = ₹)</span></Label>
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={exchangeRate || ''}
+                onChange={(e) => onRateChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                placeholder="e.g. 83.5"
+              />
+              <Button type="button" variant="outline" size="icon" onClick={refreshRate} disabled={loadingRate} title="Fetch live rate">
+                {loadingRate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Auto-fetched from live rates. You can override — this rate will be used for all USD conversions in this quote.</p>
           </div>
         </CardContent>
       </Card>
