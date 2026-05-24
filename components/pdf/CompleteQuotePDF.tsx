@@ -401,10 +401,11 @@ export function CompleteQuotePDF({ quote, mode = 'complete', customer, products,
   const customExtra = quote.custom_pricing_price || 0;
   const isForSite = quote.pricing_type === 'for-site';
 
-  // For international: convert each component to USD. For INR: use raw values.
+  // For both INR and USD: compute product subtotal from individual products
+  // (quote.subtotal_inr includes packing/freight/custom — can't use it as "Ex-Works")
   const exWorksDisplay = isIntl
     ? sorted.reduce((sum, p) => sum + toUSD(p.unit_price_inr) * p.quantity, 0)
-    : quote.subtotal_inr;
+    : sorted.reduce((sum, p) => sum + p.line_total_inr, 0);
   const packingDisplay = isIntl ? toUSD(packing) : packing;
   const freightDisplay = isIntl ? toUSD(freight) : freight;
   const customExtraDisplay = isIntl ? toUSD(customExtra) : customExtra;
