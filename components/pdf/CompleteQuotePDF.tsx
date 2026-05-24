@@ -354,19 +354,33 @@ interface CompleteQuoteProps {
 export function CompleteQuotePDF({ quote, mode = 'complete', customer, products, creator, company, exchangeRate }: CompleteQuoteProps) {
   const isIntl = customer.is_international;
   const cur = isIntl ? 'USD' : 'INR';
-  const sym = isIntl ? '$' : '₹';
-  const conv = (inr: number) => {
-    if (!isIntl) return inr;
-    return exchangeRate > 0 ? inr / exchangeRate : 0;
-  };
+  const sym = isIntl ? '$' : 'Rs.';
   const isUnpriced = mode === 'unpriced-summary';
+
+  // ── USD conversion: full precision, format to 2 decimals at display time ──
+  const toUSD = (inr: number) => exchangeRate > 0 ? inr / exchangeRate : 0;
+  const fmtUSDVal = (usd: number) => `${sym} ${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtINRVal = (inr: number) => `${sym} ${inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+  /** Format a single INR value */
   const fmt = (inr: number) => {
     if (isUnpriced) return 'Quoted';
-    const v = conv(inr);
-    if (isIntl) {
-      return `${sym} ${Math.round(v).toLocaleString('en-US')}`;
-    }
-    return `${sym} ${v.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    if (isIntl) return fmtUSDVal(toUSD(inr));
+    return fmtINRVal(inr);
+  };
+
+  /** Format a line total: unit × qty (computed in display currency) */
+  const fmtLine = (unitInr: number, qty: number) => {
+    if (isUnpriced) return 'Quoted';
+    if (isIntl) return fmtUSDVal(toUSD(unitInr) * qty);
+    return fmtINRVal(unitInr * qty);
+  };
+
+  /** Format a pre-computed display value (already in the right currency) */
+  const fmtDisplay = (displayVal: number) => {
+    if (isUnpriced) return 'Quoted';
+    if (isIntl) return fmtUSDVal(displayVal);
+    return fmtINRVal(displayVal);
   };
 
   const fmtDate = (iso: string) => {
@@ -381,15 +395,26 @@ export function CompleteQuotePDF({ quote, mode = 'complete', customer, products,
   const sorted = [...products].sort((a, b) => a.sort_order - b.sort_order);
   const totalQty = sorted.reduce((sum, p) => sum + (p.quantity || 0), 0);
 
-  const exWorksTotal = quote.subtotal_inr;
+  // ── Compute display values ──
   const packing = quote.packing_price || 0;
-  const customExtra = quote.custom_pricing_price || 0;
-  const totalExWorks = exWorksTotal + packing + customExtra;
   const freight = quote.freight_price || 0;
+  const customExtra = quote.custom_pricing_price || 0;
   const isForSite = quote.pricing_type === 'for-site';
-  const totalWithFreight = totalExWorks + (isForSite ? freight : 0);
+
+  // For international: convert each component to USD. For INR: use raw values.
+  const exWorksDisplay = isIntl
+    ? sorted.reduce((sum, p) => sum + toUSD(p.unit_price_inr) * p.quantity, 0)
+    : quote.subtotal_inr;
+  const packingDisplay = isIntl ? toUSD(packing) : packing;
+  const freightDisplay = isIntl ? toUSD(freight) : freight;
+  const customExtraDisplay = isIntl ? toUSD(customExtra) : customExtra;
   const gstAmount = quote.tax_amount_inr || 0;
-  const grandTotal = quote.grand_total_inr || 0;
+  const gstDisplay = isIntl ? 0 : gstAmount; // GST is 0 for international
+  const totalExWorksDisplay = exWorksDisplay + packingDisplay + customExtraDisplay;
+  const totalWithFreightDisplay = totalExWorksDisplay + (isForSite ? freightDisplay : 0);
+  const grandTotalDisplay = !isIntl && gstAmount > 0
+    ? totalWithFreightDisplay + gstDisplay
+    : totalWithFreightDisplay;
 
   const paymentTerms = [
     `${quote.payment_advance_pct}% advance against PO`,
@@ -531,7 +556,7 @@ export function CompleteQuotePDF({ quote, mode = 'complete', customer, products,
               <Text style={[s.tCell, s.colDesc]}>{p.description}</Text>
               <Text style={[s.tCell, s.colUnit, s.tCellRight]}>{fmt(p.unit_price_inr)}</Text>
               <Text style={[s.tCell, s.colQty, s.tCellCenter]}>{p.quantity}</Text>
-              <Text style={[s.tCell, s.colTotal, s.tCellRight, { borderRightWidth: 0 }]}>{fmt(p.line_total_inr)}</Text>
+              <Text style={[s.tCell, s.colTotal, s.tCellRight, { borderRightWidth: 0 }]}>{fmtLine(p.unit_price_inr, p.quantity)}</Text>
             </View>
           ))}
           {/* Total Qty row */}
@@ -550,35 +575,35 @@ export function CompleteQuotePDF({ quote, mode = 'complete', customer, products,
           <Text style={s.totHead}>TOTAL</Text>
           <View style={s.totRow}>
             <Text style={s.totLabel}>Ex-Works Price Coimbatore</Text>
-            <Text style={s.totValue}>{fmt(exWorksTotal)}</Text>
+            <Text style={s.totValue}>{fmtDisplay(exWorksDisplay)}</Text>
           </View>
           {packing > 0 && (
             <View style={s.totRow}>
               <Text style={s.totLabel}>Packing Charges</Text>
-              <Text style={s.totValue}>{fmt(packing)}</Text>
+              <Text style={s.totValue}>{fmtDisplay(packingDisplay)}</Text>
             </View>
           )}
           {isForSite && (
             <View style={s.totRow}>
               <Text style={s.totLabel}>Freight Charges</Text>
-              <Text style={s.totValue}>{fmt(freight)}</Text>
+              <Text style={s.totValue}>{fmtDisplay(freightDisplay)}</Text>
             </View>
           )}
           {quote.custom_pricing_title && customExtra > 0 && (
             <View style={s.totRow}>
               <Text style={s.totLabel}>{quote.custom_pricing_title}</Text>
-              <Text style={s.totValue}>{fmt(customExtra)}</Text>
+              <Text style={s.totValue}>{fmtDisplay(customExtraDisplay)}</Text>
             </View>
           )}
           {!isIntl && gstAmount > 0 && (
             <View style={s.totRow}>
               <Text style={s.totLabel}>GST(18 %)</Text>
-              <Text style={s.totValue}>{fmt(gstAmount)}</Text>
+              <Text style={s.totValue}>{fmtDisplay(gstDisplay)}</Text>
             </View>
           )}
           <View style={[s.totRow, { borderBottomWidth: 0 }]}>
             <Text style={[s.totLabel, s.totFinal]}>{isForSite ? 'Total F.O.R. Site Price (Excluding Insurance)' : 'Total Ex-works Price(Excluding Freight/Insurance)'}</Text>
-            <Text style={[s.totValue, s.totFinal]}>{fmt(!isIntl && gstAmount > 0 ? grandTotal : totalWithFreight)}</Text>
+            <Text style={[s.totValue, s.totFinal]}>{fmtDisplay(grandTotalDisplay)}</Text>
           </View>
         </View>
 

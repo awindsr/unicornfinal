@@ -140,16 +140,27 @@ export default function AdminQuoteDetailPage({ params }: { params: Promise<{ id:
   const creator = quote.created_by_profile as { full_name: string } | null;
   const isIntl = customer.is_international;
   const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN')}`;
-  const fmtUSD = (v: number) => `$${convertToUSD(v, exchangeRate).toLocaleString('en-US')}`;
+  const toUSD = (v: number) => exchangeRate > 0 ? v / exchangeRate : 0;
+  const fmtUSD = (v: number) => `$${toUSD(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtUSDRaw = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmt = (v: number) => isIntl ? fmtUSD(v) : fmtINR(v);
 
   const productSubtotal = products.reduce((s, p) => s + Number(p.line_total_inr ?? 0), 0);
-  const productSubtotalUSD = products.reduce((s, p) => s + lineToUSD(Number(p.unit_price_inr ?? 0), p.quantity, exchangeRate), 0);
+  const productSubtotalUSD = products.reduce((s, p) => s + toUSD(Number(p.unit_price_inr ?? 0)) * p.quantity, 0);
   const packingPrice = Number(quote.packing_price ?? 0);
   const freightPrice = Number(quote.freight_price ?? 0);
+  const customPricingPrice = Number(quote.custom_pricing_price ?? 0);
   const subtotalINR = Number(quote.subtotal_inr ?? 0);
   const taxINR = Number(quote.tax_amount_inr ?? 0);
   const grandTotalINR = Number(quote.grand_total_inr ?? 0);
+
+  // Compute USD grand total from components (full precision, formatted at display)
+  const packingUSD = toUSD(packingPrice);
+  const freightUSD = toUSD(freightPrice);
+  const customPricingUSD = toUSD(customPricingPrice);
+  const grandTotalUSD = productSubtotalUSD + packingUSD
+    + (quote.pricing_type === 'for-site' ? freightUSD : 0)
+    + (quote.pricing_type === 'custom' ? customPricingUSD : 0);
 
   const statusColor: Record<string, string> = {
     draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -343,7 +354,7 @@ export default function AdminQuoteDetailPage({ params }: { params: Promise<{ id:
                         {isIntl && <TableCell className="text-right text-blue-600 dark:text-blue-400 font-semibold">{fmtUSD(unitINR)}</TableCell>}
                         <TableCell className="text-right font-semibold">{fmtINR(unitINR)}</TableCell>
                         <TableCell className="text-center">{p.quantity}</TableCell>
-                        {isIntl && <TableCell className="text-right text-blue-600 dark:text-blue-400 font-semibold">${lineToUSD(unitINR, p.quantity, exchangeRate).toLocaleString('en-US')}</TableCell>}
+                        {isIntl && <TableCell className="text-right text-blue-600 dark:text-blue-400 font-semibold">{fmtUSDRaw(toUSD(unitINR) * p.quantity)}</TableCell>}
                         <TableCell className="text-right font-semibold">{fmtINR(totalINR)}</TableCell>
                       </TableRow>
                     );
@@ -352,7 +363,7 @@ export default function AdminQuoteDetailPage({ params }: { params: Promise<{ id:
                   {/* Subtotal row */}
                   <TableRow className="bg-muted/30">
                     <TableCell colSpan={isIntl ? 6 : 5} className="text-right font-bold">Subtotal:</TableCell>
-                    {isIntl && <TableCell className="text-right font-bold text-blue-600 dark:text-blue-400">${productSubtotalUSD.toLocaleString('en-US')}</TableCell>}
+                    {isIntl && <TableCell className="text-right font-bold text-blue-600 dark:text-blue-400">{fmtUSDRaw(productSubtotalUSD)}</TableCell>}
                     <TableCell className="text-right font-bold">{fmtINR(productSubtotal)}</TableCell>
                   </TableRow>
 
@@ -395,7 +406,7 @@ export default function AdminQuoteDetailPage({ params }: { params: Promise<{ id:
                   {/* Grand Total row */}
                   <TableRow className="bg-emerald-50 dark:bg-emerald-950/30">
                     <TableCell colSpan={isIntl ? 6 : 5} className="text-right font-bold text-base">Grand Total:</TableCell>
-                    {isIntl && <TableCell className="text-right font-bold text-base text-emerald-600 dark:text-emerald-400">{fmtUSD(grandTotalINR)}</TableCell>}
+                    {isIntl && <TableCell className="text-right font-bold text-base text-emerald-600 dark:text-emerald-400">{fmtUSDRaw(grandTotalUSD)}</TableCell>}
                     <TableCell className="text-right font-bold text-base text-emerald-600 dark:text-emerald-400">{fmtINR(grandTotalINR)}</TableCell>
                   </TableRow>
                 </TableBody>
