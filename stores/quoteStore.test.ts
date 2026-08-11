@@ -70,6 +70,78 @@ describe('updateProduct staleness', () => {
   });
 });
 
+describe('calculation sequencing (concurrent recalculation races)', () => {
+  it('beginCalculation returns an incrementing sequence number per product', () => {
+    const p = seedProduct();
+    const seq1 = useQuoteStore.getState().beginCalculation(p.id);
+    const seq2 = useQuoteStore.getState().beginCalculation(p.id);
+    expect(seq2).toBeGreaterThan(seq1);
+  });
+
+  it('commitCalculationResult applies the result when it is still the latest calculation for that product', () => {
+    const p = seedProduct();
+    const seq = useQuoteStore.getState().beginCalculation(p.id);
+    const snapshot = useQuoteStore.getState().products.find(x => x.id === p.id)!;
+    const committed = useQuoteStore.getState().commitCalculationResult(p.id, seq, snapshot, {
+      unit_price: 850, line_total: 850, price_stale: false,
+    });
+    expect(committed).toBe(true);
+    expect(useQuoteStore.getState().products[0].unit_price).toBe(850);
+    expect(useQuoteStore.getState().products[0].price_stale).toBe(false);
+  });
+
+  it('rejects a superseded (out-of-order) result and keeps the newer one — the discount race', () => {
+    const p = seedProduct(); // unit_price 1000, price_stale false, discount 0%
+    // Call A starts calculating with discount still at 0%.
+    const seqA = useQuoteStore.getState().beginCalculation(p.id);
+    const snapshotA = useQuoteStore.getState().products.find(x => x.id === p.id)!;
+
+    // User sets a 10% discount while call A is still in flight.
+    useQuoteStore.getState().updateProduct(p.id, { discount_pct: 10 });
+
+    // Call B starts (e.g. a second click, or a clobbered/re-enabled button)
+    // and correctly captures discount_pct = 10.
+    const seqB = useQuoteStore.getState().beginCalculation(p.id);
+    const snapshotB = useQuoteStore.getState().products.find(x => x.id === p.id)!;
+    expect(snapshotB.discount_pct).toBe(10);
+
+    // B finishes first with the correctly-discounted price.
+    const committedB = useQuoteStore.getState().commitCalculationResult(p.id, seqB, snapshotB, {
+      unit_price: 900, line_total: 900, price_stale: false,
+    });
+    expect(committedB).toBe(true);
+
+    // A finishes second, still holding its stale (pre-discount) snapshot.
+    const committedA = useQuoteStore.getState().commitCalculationResult(p.id, seqA, snapshotA, {
+      unit_price: 1000, line_total: 1000, price_stale: false,
+    });
+    expect(committedA).toBe(false);
+
+    // B's correct, discounted result must survive A's late arrival.
+    const final = useQuoteStore.getState().products.find(x => x.id === p.id)!;
+    expect(final.unit_price).toBe(900);
+    expect(final.price_stale).toBe(false);
+  });
+
+  it('rejects a result whose captured inputs drifted, even with no concurrent calculation', () => {
+    const p = seedProduct();
+    const seq = useQuoteStore.getState().beginCalculation(p.id);
+    const staleSnapshot = useQuoteStore.getState().products.find(x => x.id === p.id)!;
+
+    // Discount changes after the snapshot was captured, but before this same
+    // calculation (still the latest — no new beginCalculation call) finishes.
+    useQuoteStore.getState().updateProduct(p.id, { discount_pct: 25 });
+
+    const committed = useQuoteStore.getState().commitCalculationResult(p.id, seq, staleSnapshot, {
+      unit_price: 1000, line_total: 1000, price_stale: false,
+    });
+    expect(committed).toBe(false);
+    // The stale write must not land, and the product should still read as stale.
+    expect(useQuoteStore.getState().products[0].unit_price).toBe(1000); // seedProduct's original value, unchanged
+    expect(useQuoteStore.getState().products[0].price_stale).toBe(true);
+  });
+});
+
 describe('setQuoteSettings staleness', () => {
   it('marks ALL products stale when agent_commission_pct changes', () => {
     seedProduct();
