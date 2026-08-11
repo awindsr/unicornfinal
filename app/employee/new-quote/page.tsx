@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { useQuoteStore, PRICE_AFFECTING_PRODUCT_KEYS } from '@/stores/quoteStore';
+import { useQuoteStore } from '@/stores/quoteStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -50,6 +50,7 @@ const STEPS = [
  * ({ message, details, hint, code }) — NOT an Error instance — so an
  * `err instanceof Error` check silently discards the real reason.
  */
+
 function describeError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (err && typeof err === 'object') {
@@ -200,6 +201,7 @@ export default function NewQuotePage() {
       return;
     }
 
+    const mySeq = store.beginCalculation(productId);
     setCalculatingId(productId);
     try {
       // ============================================================
@@ -346,37 +348,6 @@ export default function NewQuotePage() {
       };
       const result = calculateProductPrice(costs, params);
 
-      // The lookups above take several round-trips; inputs stay editable
-      // meanwhile. If any price-affecting value changed mid-calculation,
-      // this result is already outdated — keep the product flagged stale.
-      const freshState = useQuoteStore.getState();
-      const freshProduct = freshState.products.find(pp => pp.id === productId);
-      const editedDuringCalc = !freshProduct
-        || PRICE_AFFECTING_PRODUCT_KEYS.some(k => freshProduct[k] !== product[k])
-        || freshState.agent_commission_pct !== commPct
-        || freshState.mfg_profit_pct !== store.mfg_profit_pct
-        || freshState.bo_profit_pct !== store.bo_profit_pct
-        || freshState.neg_margin_pct !== store.neg_margin_pct;
-
-      store.updateProduct(productId, {
-        body_cost: bodyCost,
-        bonnet_cost: bonnetCost,
-        plug_cost: plugCost,
-        seat_cost: seatCost,
-        stem_cost: stemCost,
-        cage_cost: cageCost,
-        seal_ring_cost: sealCost,
-        pilot_plug_cost: pilotCost,
-        actuator_cost: actCost,
-        handwheel_cost: hwCost,
-        unit_price: result.unitPrice,
-        line_total: result.lineTotal,
-        ...(editedDuringCalc ? {} : { price_stale: false }),
-      });
-      if (editedDuringCalc) {
-        toast.warning('Values changed while the price was being calculated — click Calculate Price again to refresh.');
-      }
-
       // ---- Check for critical errors (zero costs that shouldn't be zero) ----
       const criticalMissing: string[] = [];
       // Body
@@ -402,14 +373,53 @@ export default function NewQuotePage() {
       // Handwheel
       if (product.handwheel_model_id && !hwP) criticalMissing.push('Handwheel price not found — contact administrator');
 
-
       const hasCritical = criticalMissing.length > 0;
 
-      // Store warnings on the product for display
-      store.updateProduct(productId, {
+      // The lookups above take several round-trips; inputs stay editable
+      // meanwhile, and another calculation for this same product may have
+      // started (and even finished) before this one does. commitCalculation
+      // Result only applies this result if it's still the latest calculation
+      // for this product AND none of its price-affecting inputs (e.g.
+      // discount_pct) drifted since `product` was captured — otherwise a
+      // slower, stale-input result could silently clobber a newer, correct
+      // one. Quote-level margins/commission are checked here since they
+      // aren't part of a single product's own field set.
+      const freshState = useQuoteStore.getState();
+      const quoteSettingsChanged =
+        freshState.agent_commission_pct !== commPct
+        || freshState.mfg_profit_pct !== store.mfg_profit_pct
+        || freshState.bo_profit_pct !== store.bo_profit_pct
+        || freshState.neg_margin_pct !== store.neg_margin_pct;
+
+      const committed = !quoteSettingsChanged && store.commitCalculationResult(productId, mySeq, product, {
+        body_cost: bodyCost,
+        bonnet_cost: bonnetCost,
+        plug_cost: plugCost,
+        seat_cost: seatCost,
+        stem_cost: stemCost,
+        cage_cost: cageCost,
+        seal_ring_cost: sealCost,
+        pilot_plug_cost: pilotCost,
+        actuator_cost: actCost,
+        handwheel_cost: hwCost,
+        unit_price: result.unitPrice,
+        line_total: result.lineTotal,
         pricing_warnings: [...warnings, ...criticalMissing],
         has_pricing_errors: hasCritical,
+        price_stale: false,
       });
+
+      if (!committed) {
+        // Stay quiet if a newer calculation for this product has already
+        // taken over — that one's own toast is the relevant one. Only warn
+        // when this was still the latest attempt but its inputs moved
+        // underneath it (plain mid-flight edit, no second click involved).
+        const stillLatest = useQuoteStore.getState().products.find(p => p.id === productId)?.calc_seq === mySeq;
+        if (stillLatest) {
+          toast.warning('Values changed while the price was being calculated — click Calculate Price again to refresh.');
+        }
+        return;
+      }
 
       // ---- Show result with warnings ----
       if (hasCritical) {
@@ -1246,8 +1256,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Material (Body & Bonnet) *</Label>
                   <Select value={product.body_bonnet_material_id} onValueChange={(v) => {
-                    const m = (materials['BodyBonnet'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { body_bonnet_material_id: v ?? '', body_bonnet_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['BodyBonnet'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { body_bonnet_material_id: id, body_bonnet_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1255,6 +1266,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['BodyBonnet'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1290,8 +1302,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Plug Material *</Label>
                   <Select value={product.plug_material_id} onValueChange={(v) => {
-                    const m = (materials['Plug'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { plug_material_id: v ?? '', plug_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Plug'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { plug_material_id: id, plug_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1299,6 +1312,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Plug'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1313,8 +1327,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Seat Material *</Label>
                   <Select value={product.seat_material_id} onValueChange={(v) => {
-                    const m = (materials['Seat'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { seat_material_id: v ?? '', seat_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Seat'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { seat_material_id: id, seat_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1322,6 +1337,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Seat'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1336,8 +1352,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Stem Material *</Label>
                   <Select value={product.stem_material_id} onValueChange={(v) => {
-                    const m = (materials['Stem'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { stem_material_id: v ?? '', stem_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Stem'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { stem_material_id: id, stem_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1345,6 +1362,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Stem'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}

@@ -63,6 +63,10 @@ export interface ProductConfig {
   has_pricing_errors: boolean;
   // True when a price-affecting value changed after the last calculation
   price_stale: boolean;
+  // Internal bookkeeping: bumped each time a calculation starts for this
+  // product, so a late-finishing (superseded) calculation can recognize
+  // it's no longer the latest and skip overwriting a newer result.
+  calc_seq: number;
 }
 
 const emptyProduct = (): ProductConfig => ({
@@ -120,6 +124,7 @@ const emptyProduct = (): ProductConfig => ({
   pricing_warnings: [],
   has_pricing_errors: false,
   price_stale: false,
+  calc_seq: 0,
 });
 
 interface QuoteState {
@@ -158,6 +163,15 @@ interface QuoteState {
   updateProduct: (id: string, updates: Partial<ProductConfig>) => void;
   removeProduct: (id: string) => void;
   duplicateProduct: (id: string) => void;
+
+  // Concurrent-calculation guard — see beginCalculation/commitCalculationResult below.
+  beginCalculation: (id: string) => number;
+  commitCalculationResult: (
+    id: string,
+    seq: number,
+    snapshot: ProductConfig,
+    updates: Partial<ProductConfig>
+  ) => boolean;
 
   // Margins (loaded from global settings)
   mfg_profit_pct: number;
@@ -224,6 +238,17 @@ export const PRICE_AFFECTING_PRODUCT_KEYS: ReadonlyArray<keyof ProductConfig> = 
 // Quote-level keys that feed every product's price calculation.
 const PRICE_AFFECTING_QUOTE_KEYS = ['agent_commission_pct', 'pricing_mode'] as const;
 
+// Shared by updateProduct and commitCalculationResult so both apply the
+// exact same staleness rule.
+function applyProductUpdate(p: ProductConfig, updates: Partial<ProductConfig>): ProductConfig {
+  const changed = PRICE_AFFECTING_PRODUCT_KEYS.some(
+    (k) => k in updates && updates[k] !== p[k]
+  );
+  // Explicit price_stale in updates (the calculator clearing the flag)
+  // wins over detection; detection only ever sets it to true.
+  return { ...p, ...updates, ...(changed ? { price_stale: true } : {}) };
+}
+
 export const useQuoteStore = create<QuoteState>((set) => ({
   ...initialState,
 
@@ -247,16 +272,43 @@ export const useQuoteStore = create<QuoteState>((set) => ({
   })),
 
   updateProduct: (id, updates) => set((state) => ({
-    products: state.products.map(p => {
-      if (p.id !== id) return p;
-      const changed = PRICE_AFFECTING_PRODUCT_KEYS.some(
-        (k) => k in updates && updates[k] !== p[k]
-      );
-      // Explicit price_stale in updates (the calculator clearing the flag)
-      // wins over detection; detection only ever sets it to true.
-      return { ...p, ...updates, ...(changed ? { price_stale: true } : {}) };
-    }),
+    products: state.products.map(p => p.id === id ? applyProductUpdate(p, updates) : p),
   })),
+
+  // Calculating a price takes several sequential DB round-trips (see
+  // lookupCosts in the quote wizard), during which the product stays fully
+  // editable and nothing stops a second calculation for the same product
+  // from starting. Whichever finishes last would normally win, even if it
+  // started first and captured older inputs (e.g. an old discount_pct) —
+  // silently clobbering a correct, newer result. beginCalculation/
+  // commitCalculationResult close that gap: a result only lands if it's
+  // still the most recently *started* calculation for that product AND
+  // none of its price-affecting inputs moved since it captured them.
+  beginCalculation: (id) => {
+    let seq = 0;
+    set((state) => ({
+      products: state.products.map(p => {
+        if (p.id !== id) return p;
+        seq = p.calc_seq + 1;
+        return { ...p, calc_seq: seq };
+      }),
+    }));
+    return seq;
+  },
+
+  commitCalculationResult: (id, seq, snapshot, updates) => {
+    let committed = false;
+    set((state) => ({
+      products: state.products.map(p => {
+        if (p.id !== id || p.calc_seq !== seq) return p; // superseded by a newer calculation
+        const inputsDrifted = PRICE_AFFECTING_PRODUCT_KEYS.some(k => p[k] !== snapshot[k]);
+        if (inputsDrifted) return p; // this product's own inputs changed since we started
+        committed = true;
+        return applyProductUpdate(p, updates);
+      }),
+    }));
+    return committed;
+  },
 
   removeProduct: (id) => set((state) => ({
     products: state.products.filter(p => p.id !== id),
@@ -366,6 +418,7 @@ export const useQuoteStore = create<QuoteState>((set) => ({
       pricing_warnings: [],
       has_pricing_errors: false,
       price_stale: false,
+      calc_seq: 0,
     })),
   }),
 
