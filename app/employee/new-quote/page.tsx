@@ -50,6 +50,7 @@ const STEPS = [
  * ({ message, details, hint, code }) — NOT an Error instance — so an
  * `err instanceof Error` check silently discards the real reason.
  */
+
 function describeError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (err && typeof err === 'object') {
@@ -1246,8 +1247,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Material (Body & Bonnet) *</Label>
                   <Select value={product.body_bonnet_material_id} onValueChange={(v) => {
-                    const m = (materials['BodyBonnet'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { body_bonnet_material_id: v ?? '', body_bonnet_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['BodyBonnet'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { body_bonnet_material_id: id, body_bonnet_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1255,6 +1257,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['BodyBonnet'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1290,8 +1293,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Plug Material *</Label>
                   <Select value={product.plug_material_id} onValueChange={(v) => {
-                    const m = (materials['Plug'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { plug_material_id: v ?? '', plug_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Plug'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { plug_material_id: id, plug_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1299,6 +1303,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Plug'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1313,8 +1318,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Seat Material *</Label>
                   <Select value={product.seat_material_id} onValueChange={(v) => {
-                    const m = (materials['Seat'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { seat_material_id: v ?? '', seat_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Seat'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { seat_material_id: id, seat_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1322,6 +1328,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Seat'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
@@ -1336,8 +1343,9 @@ function StepProducts({
                 <div className="space-y-1.5">
                   <Label className="text-xs">Stem Material *</Label>
                   <Select value={product.stem_material_id} onValueChange={(v) => {
-                    const m = (materials['Stem'] ?? []).find(m => m.id === v);
-                    store.updateProduct(product.id, { stem_material_id: v ?? '', stem_material_name: m?.material_name ?? '' });
+                    const id = v === NONE_VALUE ? '' : (v ?? '');
+                    const m = (materials['Stem'] ?? []).find(m => m.id === id);
+                    store.updateProduct(product.id, { stem_material_id: id, stem_material_name: m?.material_name ?? '' });
                   }}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select">
@@ -1345,6 +1353,7 @@ function StepProducts({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— None —</SelectItem>
                       {(materials['Stem'] ?? []).map(m => (
                         <SelectItem key={m.id} value={m.id}>{m.material_name}</SelectItem>
                       ))}
